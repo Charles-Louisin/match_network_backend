@@ -16,8 +16,10 @@ const app = express()
 
 // Middleware
 app.use(cors({
-  origin: ['https://match-network.vercel.app', 'http://localhost:3000'],
-  credentials: true
+  origin: ['https://match-network.vercel.app', 'http://localhost:3000', 'https://www.match-network.vercel.app'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }))
 app.use(express.json())
 
