@@ -14,13 +14,18 @@ const userRoutes = require('./routes/userRoutes')
 
 const app = express()
 
-// Middleware
+// CORS configuration
 app.use(cors({
   origin: ['https://match-network.vercel.app', 'http://localhost:3000', 'https://www.match-network.vercel.app'],
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range']
 }))
+
+// Enable pre-flight requests
+app.options('*', cors())
+
 app.use(express.json())
 
 // Configuration des fichiers statiques

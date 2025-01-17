@@ -50,7 +50,10 @@ const authController = {
         return res.status(401).json({ message: 'Email ou mot de passe incorrect' })
       }
 
-      res.json({
+      // Ajout de logs pour le débogage
+      console.log('User found:', { id: user._id, username: user.username })
+      
+      const response = {
         token: generateToken(user._id),
         user: {
           id: user._id,
@@ -58,9 +61,13 @@ const authController = {
           email: user.email,
           avatar: user.avatar
         }
-      })
+      }
+
+      console.log('Response being sent:', response)
+      res.json(response)
     } catch (error) {
-      res.status(500).json({ message: error.message })
+      console.error('Login error:', error)
+      res.status(500).json({ message: 'Erreur lors de la connexion', error: error.message })
     }
   },
 
@@ -137,4 +144,4 @@ const authController = {
   }
 }
 
-module.exports = authController 
+module.exports = authController
