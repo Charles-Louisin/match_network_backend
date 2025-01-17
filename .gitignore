@@ -1,0 +1,9 @@
+#Modules
+node_modules
+
+#Config
+.env
+
+#Images
+uploads/*
+!uploads/.gitkeep
