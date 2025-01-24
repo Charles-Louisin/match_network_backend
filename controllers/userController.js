@@ -5,6 +5,8 @@ const jwt = require('jsonwebtoken')
 const multer = require('multer')
 const path = require('path')
 const fs = require('fs')
+const mongoose = require('mongoose') // Ajout de mongoose pour utiliser Types.ObjectId
+const { createNotification } = require('./notificationController')
 
 // Créer le dossier uploads s'il n'existe pas
 const uploadDir = path.join(__dirname, '../uploads')
@@ -165,10 +167,17 @@ const userController = {
   getProfile: async (req, res) => {
     try {
       console.log('Getting profile for ID:', req.params.id)
-      console.log('Requesting user:', req.user.id)
-
+      console.log('Request headers:', req.headers)
+      console.log('Requesting user:', req.user)
+      
       const userId = req.params.id
-      const requestingUserId = req.user.id
+      const requestingUserId = req.user._id
+
+      // Vérifier si l'ID est un ObjectId valide
+      if (!mongoose.Types.ObjectId.isValid(userId)) {
+        console.log('Invalid ObjectId format')
+        return res.status(400).json({ message: 'ID utilisateur invalide' })
+      }
 
       const user = await User.findById(userId)
         .select('-password')
@@ -176,11 +185,11 @@ const userController = {
         .lean()
 
       if (!user) {
-        console.log('User not found')
-        return res.status(404).json({ message: 'User not found' })
+        console.log('User not found for ID:', userId)
+        return res.status(404).json({ message: 'Utilisateur non trouvé' })
       }
 
-      console.log('User found:', user.username)
+      console.log('User found:', user)
 
       // Ajouter le flag isCurrentUser
       user.isCurrentUser = userId === requestingUserId.toString()
@@ -241,6 +250,52 @@ const userController = {
     }
   },
 
+  // Obtenir les suggestions d'amis
+  getSuggestions: async (req, res) => {
+    try {
+      console.log('Getting suggestions for user:', req.user._id);
+      
+      // Récupérer la liste des amis actuels et des demandes en attente
+      const user = await User.findById(req.user._id)
+        .populate('friends')
+        .populate('friendRequests.sender')
+        .populate('friendRequests.receiver');
+      
+      if (!user) {
+        console.log('User not found');
+        return res.status(404).json({ message: 'Utilisateur non trouvé' });
+      }
+
+      // Créer un tableau des IDs à exclure (amis actuels et demandes en attente)
+      const excludeIds = [
+        req.user._id,
+        ...user.friends.map(friend => friend._id),
+        ...user.friendRequests.map(request => request.sender._id),
+        ...user.friendRequests.map(request => request.receiver._id)
+      ];
+
+      console.log('Excluding IDs:', excludeIds);
+
+      // Trouver des utilisateurs qui ne sont pas amis
+      const suggestions = await User.find({
+        _id: { $nin: excludeIds },
+        isActive: true
+      })
+      .select('username email avatar bio')
+      .limit(10);
+
+      console.log('Found suggestions:', suggestions.length);
+
+      res.json(suggestions);
+    } catch (error) {
+      console.error('Error in getSuggestions:', error);
+      res.status(500).json({ 
+        message: 'Erreur lors de la récupération des suggestions',
+        error: error.message 
+      });
+    }
+  },
+
   // Mettre à jour le profil
   updateProfile: async (req, res) => {
     try {
@@ -290,26 +345,42 @@ const userController = {
   uploadAvatar: async (req, res) => {
     try {
       if (!req.file) {
-        return res.status(400).json({ message: 'No file uploaded' });
+        return res.status(400).json({ message: 'Aucun fichier uploadé' });
       }
 
-      const user = await User.findById(req.user._id);
-      if (!user) {
-        return res.status(404).json({ message: 'User not found' });
+      // Vérifier la taille du fichier (10MB max)
+      if (req.file.size > 10 * 1024 * 1024) {
+        return res.status(400).json({ message: 'La taille du fichier doit être inférieure à 10MB' });
       }
 
-      // Mettre à jour l'avatar
-      const avatarPath = path.join('/uploads', req.file.filename).replace(/\\/g, '/')
-      user.avatar = avatarPath;
-      await user.save();
+      const userId = req.user._id;
+      const avatarPath = `/uploads/${req.file.filename}`;
+
+      const user = await User.findByIdAndUpdate(
+        userId,
+        { avatar: avatarPath },
+        { new: true }
+      );
+
+      // Notifier les amis de l'utilisateur
+      const friends = user.friends || [];
+      for (const friendId of friends) {
+        await createNotification(
+          'PROFILE_PHOTO_UPDATED',
+          userId,
+          friendId,
+          `${req.user.username} a mis à jour sa photo de profil`,
+          userId
+        );
+      }
 
       res.json({
-        success: true,
+        message: 'Photo de profil mise à jour avec succès',
         avatar: avatarPath
       });
     } catch (error) {
-      console.error('Error in uploadAvatar:', error);
-      res.status(500).json({ message: error.message });
+      console.error('Error uploading avatar:', error);
+      res.status(500).json({ message: 'Erreur lors de la mise à jour de la photo de profil' });
     }
   },
 
@@ -317,26 +388,42 @@ const userController = {
   uploadCoverPhoto: async (req, res) => {
     try {
       if (!req.file) {
-        return res.status(400).json({ message: 'No file uploaded' });
+        return res.status(400).json({ message: 'Aucun fichier uploadé' });
       }
 
-      const user = await User.findById(req.user._id);
-      if (!user) {
-        return res.status(404).json({ message: 'User not found' });
+      // Vérifier la taille du fichier (10MB max)
+      if (req.file.size > 10 * 1024 * 1024) {
+        return res.status(400).json({ message: 'La taille du fichier doit être inférieure à 10MB' });
       }
 
-      // Mettre à jour la photo de couverture
-      const coverPath = path.join('/uploads', req.file.filename).replace(/\\/g, '/')
-      user.coverPhoto = coverPath;
-      await user.save();
+      const userId = req.user._id;
+      const coverPhotoPath = `/uploads/${req.file.filename}`;
+
+      const user = await User.findByIdAndUpdate(
+        userId,
+        { coverPhoto: coverPhotoPath },
+        { new: true }
+      );
+
+      // Notifier les amis de l'utilisateur
+      const friends = user.friends || [];
+      for (const friendId of friends) {
+        await createNotification(
+          'COVER_PHOTO_UPDATED',
+          userId,
+          friendId,
+          `${req.user.username} a mis à jour sa photo de couverture`,
+          userId
+        );
+      }
 
       res.json({
-        success: true,
-        coverPhoto: coverPath
+        message: 'Photo de couverture mise à jour avec succès',
+        coverPhoto: coverPhotoPath
       });
     } catch (error) {
-      console.error('Error in uploadCoverPhoto:', error);
-      res.status(500).json({ message: error.message });
+      console.error('Error uploading cover photo:', error);
+      res.status(500).json({ message: 'Erreur lors de la mise à jour de la photo de couverture' });
     }
   },
 

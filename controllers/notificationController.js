@@ -1,5 +1,6 @@
 const Notification = require('../models/Notification');
 const User = require('../models/User');
+const Post = require('../models/Post');
 
 const notificationController = {
   // Récupérer toutes les notifications d'un utilisateur
@@ -8,145 +9,101 @@ const notificationController = {
       const userId = req.user._id;
       console.log('Getting notifications for user:', userId);
 
-      // Récupérer toutes les notifications pertinentes
+      // Récupérer les notifications non lues
       const notifications = await Notification.find({ 
         recipient: userId,
-        sender: { $ne: userId }, // Exclure les notifications où l'utilisateur est à la fois expéditeur et destinataire
-        $or: [
-          { type: 'FRIEND_REQUEST', status: { $ne: 'accepted' } },
-          { type: 'FRIEND_ACCEPT', read: false }
-        ]
+        sender: { $ne: userId }
       })
       .populate('sender', 'username avatar')
-      .populate('reference')
       .sort('-createdAt');
 
-      console.log('Found notifications:', notifications);
-      res.json(notifications);
+      // Récupérer les détails des références
+      const populatedNotifications = await Promise.all(
+        notifications.map(async (notification) => {
+          let populatedNotification = notification.toObject();
+
+          if (['POST_CREATED', 'POST_LIKE', 'POST_COMMENT'].includes(notification.type)) {
+            const post = await Post.findById(notification.reference)
+              .populate('user', 'username avatar');
+            if (post) {
+              populatedNotification.reference = {
+                _id: post._id,
+                image: post.image,
+                content: post.content,
+                user: post.user
+              };
+            }
+          } else if (notification.type === 'PROFILE_PHOTO_UPDATED') {
+            const user = await User.findById(notification.sender);
+            if (user) {
+              populatedNotification.reference = user.avatar;
+            }
+          } else if (notification.type === 'COVER_PHOTO_UPDATED') {
+            const user = await User.findById(notification.sender);
+            if (user) {
+              populatedNotification.reference = user.coverPhoto;
+            }
+          }
+
+          return populatedNotification;
+        })
+      );
+
+      console.log('Found notifications:', populatedNotifications);
+      res.json(populatedNotifications);
     } catch (error) {
-      console.error('Error fetching notifications:', error);
+      console.error('Error getting notifications:', error);
+      res.status(500).json({ message: 'Erreur lors de la récupération des notifications' });
+    }
+  },
+
+  // Obtenir le nombre de notifications non lues
+  getUnreadCount: async (req, res) => {
+    try {
+      const userId = req.user._id;
+      const count = await Notification.countDocuments({
+        recipient: userId,
+        read: false,
+        sender: { $ne: userId }
+      });
+      res.json({ count });
+    } catch (error) {
+      console.error('Error getting unread count:', error);
       res.status(500).json({ message: error.message });
     }
   },
 
-  // Envoyer une demande d'ami
-  sendFriendRequest: async (req, res) => {
+  // Créer une nouvelle notification
+  createNotification: async (type, senderId, recipientId, content, referenceId) => {
     try {
-      const { recipientId } = req.body;
-      
-      // Vérifier si une demande existe déjà
-      const existingRequest = await Notification.findOne({
-        sender: req.user._id,
-        recipient: recipientId,
-        type: 'FRIEND_REQUEST'
-      });
-
-      if (existingRequest) {
-        return res.status(400).json({ message: 'Une demande est déjà en cours' });
+      // Ne pas créer de notification si l'expéditeur est le destinataire
+      if (senderId.toString() === recipientId.toString()) {
+        return null;
       }
 
-      // Créer la notification
       const notification = await Notification.create({
-        sender: req.user._id,
+        type,
+        sender: senderId,
         recipient: recipientId,
-        type: 'FRIEND_REQUEST'
+        content,
+        reference: referenceId,
       });
 
-      await notification.populate('sender', 'username avatar');
-      
-      res.status(201).json(notification);
+      return notification;
     } catch (error) {
-      res.status(500).json({ message: error.message });
-    }
-  },
-
-  // Accepter une demande d'ami
-  acceptFriendRequest: async (req, res) => {
-    try {
-      const notification = await Notification.findById(req.params.id);
-      
-      if (!notification) {
-        return res.status(404).json({ message: 'Demande non trouvée' });
-      }
-
-      // Vérifier que l'utilisateur est bien le destinataire
-      if (notification.recipient.toString() !== req.user._id.toString()) {
-        return res.status(403).json({ message: 'Non autorisé' });
-      }
-
-      // Ajouter les utilisateurs à leurs listes d'amis respectives
-      await User.findByIdAndUpdate(req.user._id, {
-        $addToSet: { friends: notification.sender }
-      });
-
-      await User.findByIdAndUpdate(notification.sender, {
-        $addToSet: { friends: req.user._id }
-      });
-
-      // Marquer la notification comme lue
-      notification.read = true;
-      await notification.save();
-
-      // Créer une notification d'acceptation pour l'expéditeur
-      await Notification.create({
-        sender: req.user._id,
-        recipient: notification.sender,
-        type: 'FRIEND_ACCEPT',
-        read: false
-      });
-
-      res.json({ message: 'Demande acceptée' });
-    } catch (error) {
-      res.status(500).json({ message: error.message });
-    }
-  },
-
-  // Refuser une demande d'ami
-  rejectFriendRequest: async (req, res) => {
-    try {
-      const notification = await Notification.findById(req.params.id);
-      
-      if (!notification) {
-        return res.status(404).json({ message: 'Demande non trouvée' });
-      }
-
-      // Vérifier que l'utilisateur est bien le destinataire
-      if (notification.recipient.toString() !== req.user._id.toString()) {
-        return res.status(403).json({ message: 'Non autorisé' });
-      }
-
-      // Supprimer la notification
-      await notification.deleteOne();
-
-      res.json({ message: 'Demande refusée' });
-    } catch (error) {
-      res.status(500).json({ message: error.message });
-    }
-  },
-
-  // Récupérer la liste des amis
-  getFriends: async (req, res) => {
-    try {
-      const user = await User.findById(req.user._id)
-        .populate('friends', 'username avatar');
-
-      res.json(user.friends);
-    } catch (error) {
-      res.status(500).json({ message: error.message });
+      console.error('Error creating notification:', error);
+      return null;
     }
   },
 
   // Marquer une notification comme lue
   markAsRead: async (req, res) => {
     try {
-      const { notificationId } = req.params;
+      const notificationId = req.params.notificationId;
       const userId = req.user._id;
-      
+
       const notification = await Notification.findOneAndUpdate(
-        { 
-          _id: notificationId,
-          recipient: userId 
-        },
+        { _id: notificationId, recipient: userId },
         { read: true },
         { new: true }
       );
@@ -162,24 +119,19 @@ const notificationController = {
     }
   },
 
-  // Supprimer une notification
-  deleteNotification: async (req, res) => {
+  // Marquer toutes les notifications comme lues
+  markAllAsRead: async (req, res) => {
     try {
-      const { notificationId } = req.params;
       const userId = req.user._id;
+      
+      await Notification.updateMany(
+        { recipient: userId, read: false },
+        { read: true }
+      );
 
-      const notification = await Notification.findOneAndDelete({
-        _id: notificationId,
-        recipient: userId
-      });
-
-      if (!notification) {
-        return res.status(404).json({ message: 'Notification non trouvée' });
-      }
-
-      res.json({ message: 'Notification supprimée' });
+      res.json({ message: 'Toutes les notifications ont été marquées comme lues' });
     } catch (error) {
-      console.error('Error deleting notification:', error);
+      console.error('Error marking all notifications as read:', error);
       res.status(500).json({ message: error.message });
     }
   }
