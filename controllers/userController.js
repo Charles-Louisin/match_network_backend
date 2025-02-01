@@ -299,45 +299,66 @@ const userController = {
   // Mettre à jour le profil
   updateProfile: async (req, res) => {
     try {
-      const updates = req.body
-      const userId = req.user.id
+      const updates = req.body;
+      const userId = req.user._id;
 
       // Vérifier que l'utilisateur ne modifie que son propre profil
-      if (updates._id && updates._id !== userId) {
-        return res.status(403).json({ message: 'Not authorized to update this profile' })
+      if (updates._id && updates._id !== userId.toString()) {
+        return res.status(403).json({ message: 'Not authorized to update this profile' });
       }
 
       // Champs autorisés à être modifiés
-      const allowedUpdates = ['username', 'bio', 'location', 'birthDate', 'birthPlace']
-      const updateData = {}
-      
+      const allowedUpdates = ['username', 'bio', 'location', 'birthDate', 'birthPlace'];
+      const requiredFields = ['username'];
+      const updateData = {};
+
       // Vérifier si le nom d'utilisateur est déjà pris
       if (updates.username) {
         const existingUser = await User.findOne({ 
           username: updates.username,
           _id: { $ne: userId }
-        })
+        });
         if (existingUser) {
-          return res.status(400).json({ message: 'Ce nom d\'utilisateur est déjà pris' })
+          return res.status(400).json({ message: 'Ce nom d\'utilisateur est déjà pris' });
         }
       }
 
-      Object.keys(updates).forEach(key => {
+      // Valider et filtrer les champs de mise à jour
+      for (const [key, value] of Object.entries(updates)) {
         if (allowedUpdates.includes(key)) {
-          updateData[key] = updates[key]
+          if (requiredFields.includes(key) && (value === null || value === undefined || value.trim() === '')) {
+            return res.status(400).json({ message: `Le champ ${key} ne peut pas être vide` });
+          }
+          updateData[key] = value;
         }
-      })
+      }
 
-      const user = await User.findByIdAndUpdate(
+      // Vérifier si au moins le username est fourni
+      if (!updateData.username) {
+        return res.status(400).json({ message: 'Le nom d\'utilisateur est requis' });
+      }
+
+      // Log pour le débogage
+      console.log('Updating user with ID:', userId);
+      console.log('Update data:', updateData);
+
+      const updatedUser = await User.findByIdAndUpdate(
         userId,
         { $set: updateData },
-        { new: true }
-      ).select('-password')
+        { new: true, runValidators: true }
+      ).select('-password');
 
-      res.json(user)
+      if (!updatedUser) {
+        return res.status(404).json({ message: 'Utilisateur non trouvé' });
+      }
+
+      res.json(updatedUser);
     } catch (error) {
-      console.error('Error in updateProfile:', error)
-      res.status(500).json({ message: 'Server error' })
+      console.error('Error in updateProfile:', error);
+      if (error.name === 'ValidationError') {
+        return res.status(400).json({ message: 'Données invalides', errors: error.errors });
+      }
+      res.status(500).json({ message: 'Erreur serveur lors de la mise à jour du profil' });
     }
   },
 
@@ -362,15 +383,21 @@ const userController = {
         { new: true }
       );
 
-      // Notifier les amis de l'utilisateur
-      const friends = user.friends || [];
-      for (const friendId of friends) {
+      // Créer une notification pour les amis
+      const friends = await User.find({
+        friends: userId
+      });
+
+      for (const friend of friends) {
         await createNotification(
           'PROFILE_PHOTO_UPDATED',
           userId,
-          friendId,
+          friend._id,
           `${req.user.username} a mis à jour sa photo de profil`,
-          userId
+          userId,
+          {
+            image: req.file.path
+          }
         );
       }
 
@@ -405,15 +432,21 @@ const userController = {
         { new: true }
       );
 
-      // Notifier les amis de l'utilisateur
-      const friends = user.friends || [];
-      for (const friendId of friends) {
+      // Créer une notification pour les amis
+      const friends = await User.find({
+        friends: userId
+      });
+
+      for (const friend of friends) {
         await createNotification(
           'COVER_PHOTO_UPDATED',
           userId,
-          friendId,
+          friend._id,
           `${req.user.username} a mis à jour sa photo de couverture`,
-          userId
+          userId,
+          {
+            image: req.file.path
+          }
         );
       }
 
