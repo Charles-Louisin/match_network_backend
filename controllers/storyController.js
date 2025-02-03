@@ -146,79 +146,80 @@ const storyController = {
   // Voir une story
   viewStory: async (req, res) => {
     try {
-      console.log('=== DÉBUT VISUALISATION STORY (BACKEND) ===');
-      const story = await Story.findById(req.params.id)
-      
+      console.log('\n=== DÉBUT VISUALISATION STORY ===');
+      console.log('ID Story:', req.params.id);
+      console.log('ID Utilisateur:', req.user._id);
+
+      const story = await Story.findById(req.params.id);
       if (!story) {
-        console.error('Erreur: story non trouvée');
-        return res.status(404).json({ message: 'Story non trouvée' })
+        console.log('Story non trouvée');
+        return res.status(404).json({ message: 'Story non trouvée' });
       }
 
-      console.log('Ajout de l\'utilisateur à la liste des viewers');
-      if (!story.viewers.includes(req.user._id)) {
-        story.viewers.push(req.user._id)
-        await story.save()
+      // Vérifier si l'utilisateur a déjà vu la story
+      const alreadyViewed = story.viewers.includes(req.user._id);
+      console.log('Déjà vue ?', alreadyViewed);
+
+      if (!alreadyViewed) {
+        console.log('Ajout de la vue');
+        story.viewers.push(req.user._id);
+        await story.save();
+        console.log('Vue ajoutée avec succès');
       }
 
-      console.log('Récupération de la story avec populate');
       const populatedStory = await Story.findById(story._id)
         .populate('user', 'username avatar')
         .populate('viewers', 'username avatar')
-        .populate('likes', 'username avatar')
+        .populate('likes', 'username avatar');
 
-      console.log('Story récupérée avec succès:', populatedStory);
-      console.log('=== FIN VISUALISATION STORY (BACKEND) ===');
-      res.json(populatedStory)
+      console.log('Nombre de vues total:', story.viewers.length);
+      console.log('=== FIN VISUALISATION STORY ===\n');
+      
+      res.json(populatedStory);
     } catch (error) {
-      console.error('Erreur visualisation story:', error);
-      console.error('Stack trace:', error.stack);
-      res.status(500).json({ 
-        message: 'Erreur lors de la visualisation de la story',
-        error: error.message,
-        stack: error.stack
-      });
+      console.error('Erreur lors de la visualisation:', error);
+      res.status(500).json({ message: error.message });
     }
   },
 
   // Liker une story
   likeStory: async (req, res) => {
     try {
-      console.log('=== DÉBUT LIKE STORY (BACKEND) ===');
-      const story = await Story.findById(req.params.id)
-      
+      console.log('\n=== DÉBUT LIKE/UNLIKE STORY ===');
+      console.log('ID Story:', req.params.id);
+      console.log('ID Utilisateur:', req.user._id);
+
+      const story = await Story.findById(req.params.id);
       if (!story) {
-        console.error('Erreur: story non trouvée');
-        return res.status(404).json({ message: 'Story non trouvée' })
+        console.log('Story non trouvée');
+        return res.status(404).json({ message: 'Story non trouvée' });
       }
 
-      console.log('Mise à jour des likes');
-      const likeIndex = story.likes.indexOf(req.user._id)
-      
-      if (likeIndex === -1) {
-        story.likes.push(req.user._id)
+      const likeIndex = story.likes.indexOf(req.user._id);
+      const action = likeIndex === -1 ? 'like' : 'unlike';
+      console.log('Action:', action);
+
+      if (action === 'like') {
+        story.likes.push(req.user._id);
       } else {
-        story.likes.splice(likeIndex, 1)
+        story.likes.splice(likeIndex, 1);
       }
-      
-      await story.save()
 
-      console.log('Récupération de la story avec populate');
+      await story.save();
+      console.log(`${action} effectué avec succès`);
+
       const populatedStory = await Story.findById(story._id)
         .populate('user', 'username avatar')
         .populate('viewers', 'username avatar')
-        .populate('likes', 'username avatar')
+        .populate('likes', 'username avatar');
 
-      console.log('Story récupérée avec succès:', populatedStory);
-      console.log('=== FIN LIKE STORY (BACKEND) ===');
-      res.json(populatedStory)
+      console.log('Nombre de likes total:', story.likes.length);
+      console.log('=== FIN LIKE/UNLIKE STORY ===\n');
+
+      res.json(populatedStory);
     } catch (error) {
-      console.error('Erreur like story:', error);
-      console.error('Stack trace:', error.stack);
-      res.status(500).json({ 
-        message: 'Erreur lors du like de la story',
-        error: error.message,
-        stack: error.stack
-      });
+      console.error('Erreur lors du like/unlike:', error);
+      res.status(500).json({ message: error.message });
     }
   },
 
