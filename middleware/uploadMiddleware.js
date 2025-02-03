@@ -19,17 +19,18 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-  if (file.mimetype.startsWith('image/')) {
+  // Accepter les images et les vidéos
+  if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
     cb(null, true);
   } else {
-    cb(new Error('Not an image! Please upload only images.'), false);
+    cb(new Error('Format de fichier non supporté. Veuillez télécharger une image ou une vidéo.'), false);
   }
 };
 
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 10 * 1024 * 1024 // 10 MB
+    fileSize: 10 * 1024 * 1024 // 10MB max
   },
   fileFilter: fileFilter
 });

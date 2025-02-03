@@ -6,11 +6,53 @@ const storySchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
-  image: {
+  type: {
     type: String,
+    enum: ['image', 'video', 'text'],
     required: true
   },
+  media: {
+    type: String,
+    required: function() {
+      return this.type === 'image' || this.type === 'video'
+    }
+  },
+  textContent: {
+    type: {
+      text: {
+        type: String,
+        required: function() {
+          return this.parent().parent().type === 'text'
+        }
+      },
+      background: {
+        type: String,
+        required: function() {
+          return this.parent().parent().type === 'text'
+        }
+      },
+      color: {
+        type: String,
+        default: '#FFFFFF'
+      },
+      fontFamily: {
+        type: String,
+        default: 'Arial'
+      }
+    },
+    required: function() {
+      return this.type === 'text'
+    }
+  },
+  caption: {
+    type: String,
+    trim: true
+  },
   viewers: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  likes: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }],
@@ -27,4 +69,4 @@ const storySchema = new mongoose.Schema({
 })
 
 const Story = mongoose.model('Story', storySchema)
-module.exports = Story 
+module.exports = Story
