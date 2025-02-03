@@ -293,6 +293,30 @@ router.delete('/request/:userId', auth, async (req, res) => {
     }
 });
 
+// Annuler une demande d'ami
+router.post('/request/:userId/cancel', auth, async (req, res) => {
+    try {
+        const senderId = req.user.id;
+        const recipientId = req.params.userId;
+
+        // Trouver et supprimer la demande
+        const request = await FriendRequest.findOneAndDelete({
+            sender: senderId,
+            recipient: recipientId,
+            status: 'pending'
+        });
+
+        if (!request) {
+            return res.status(404).json({ message: 'Demande non trouvée' });
+        }
+
+        res.json({ message: 'Demande annulée avec succès' });
+    } catch (error) {
+        console.error('Erreur lors de l\'annulation de la demande:', error);
+        res.status(500).json({ message: 'Erreur serveur' });
+    }
+});
+
 // Vérifier le statut d'amitié avec un utilisateur
 router.get('/status/:userId', auth, async (req, res) => {
     try {
