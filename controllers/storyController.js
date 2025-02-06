@@ -156,29 +156,36 @@ const storyController = {
         return res.status(404).json({ message: 'Story non trouvée' });
       }
 
-      // Vérifier si l'utilisateur a déjà vu la story
-      const alreadyViewed = story.viewers.includes(req.user._id);
+      // Vérifier si l'utilisateur a déjà vu la story en utilisant la méthode some
+      const alreadyViewed = story.viewers.some(viewer => 
+        viewer._id.toString() === req.user._id.toString()
+      );
+      
       console.log('Déjà vue ?', alreadyViewed);
 
       if (!alreadyViewed) {
         console.log('Ajout de la vue');
-        story.viewers.push(req.user._id);
+        // Ajouter l'utilisateur aux viewers s'il n'est pas déjà présent
+        story.viewers = [...new Set([...story.viewers, req.user._id])];
         await story.save();
         console.log('Vue ajoutée avec succès');
+      } else {
+        console.log('Story déjà vue par cet utilisateur');
       }
 
+      // Récupérer la story avec les viewers populés
       const populatedStory = await Story.findById(story._id)
-        .populate('user', 'username avatar')
         .populate('viewers', 'username avatar')
-        .populate('likes', 'username avatar');
+        .populate('likes', 'username avatar')
+        .populate('user', 'username avatar');
 
-      console.log('Nombre de vues total:', story.viewers.length);
+      console.log('Nombre de viewers:', populatedStory.viewers.length);
       console.log('=== FIN VISUALISATION STORY ===\n');
-      
+
       res.json(populatedStory);
     } catch (error) {
-      console.error('Erreur lors de la visualisation:', error);
-      res.status(500).json({ message: error.message });
+      console.error('Erreur lors de la visualisation de la story:', error);
+      res.status(500).json({ message: 'Erreur lors de la visualisation de la story' });
     }
   },
 

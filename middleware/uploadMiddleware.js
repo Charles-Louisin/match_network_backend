@@ -20,8 +20,16 @@ const storage = multer.diskStorage({
 
 const fileFilter = (req, file, cb) => {
   // Accepter les images et les vidéos
-  if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
+  if (file.mimetype.startsWith('image/')) {
     cb(null, true);
+  } else if (file.mimetype.startsWith('video/')) {
+    // Vérifier la taille pour les vidéos
+    const maxSize = 50 * 1024 * 1024; // 50MB
+    if (parseInt(req.headers['content-length']) > maxSize) {
+      cb(new Error('La taille de la vidéo ne doit pas dépasser 50MB'), false);
+    } else {
+      cb(null, true);
+    }
   } else {
     cb(new Error('Format de fichier non supporté. Veuillez télécharger une image ou une vidéo.'), false);
   }
@@ -30,7 +38,7 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB max
+    fileSize: 50 * 1024 * 1024 // 50MB max
   },
   fileFilter: fileFilter
 });
